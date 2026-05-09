@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "user": {
+      "title": "User",
+      "description": "User profile with settings and contacts.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "uniqueCode": { "type": "string" },
+        "publicKey": { "type": "object" },
+        "contacts": { "type": "array", "items": { "type": "string" } },
+        "lastActive": { "type": "string", "format": "date-time" },
+        "settings": {
+          "type": "object",
+          "properties": {
+            "friendRequestsMode": { "type": "string", "enum": ["manual", "auto"] },
+            "autoAcceptGroups": { "type": "boolean" },
+            "blockedInviteUids": { "type": "array", "items": { "type": "string" } },
+            "customNames": { "type": "object", "additionalProperties": { "type": "string" } }
+          }
+        }
+      },
+      "required": ["uid", "uniqueCode", "displayName"]
+    },
+    "group": {
+      "title": "Group",
+      "description": "Group chat metadata.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "adminUid": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "memberJoinedAt": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastMessage": { "type": "string" },
+        "lastMessageTime": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "adminUid", "members"]
+    },
+    "message": {
+      "title": "Message",
+      "description": "Encrypted message.",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "groupId": { "type": "string" },
+        "chatId": { "type": "string" },
+        "encryptedContent": { "type": "string" },
+        "iv": { "type": "string" },
+        "clientTimestamp": { "type": "number" },
+        "senderName": { "type": "string" }
+      },
+      "required": ["senderId", "chatId", "encryptedContent", "iv", "clientTimestamp"]
+    },
+    "request": {
+      "title": "Request",
+      "description": "Friend or group request.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fromUid": { "type": "string" },
+        "toUid": { "type": "string" },
+        "type": { "type": "string", "enum": ["friend", "group"] },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined", "cancelled"] }
+      },
+      "required": ["id", "fromUid", "toUid", "type", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "user", "description": "User profiles" },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "message", "description": "P2P messages" },
+    "/groups/{groupId}": { "schema": "group", "description": "Group metadata" },
+    "/groups/{groupId}/messages/{messageId}": { "schema": "message", "description": "Group messages" },
+    "/requests/{requestId}": { "schema": "request", "description": "Friend/Group requests" }
+  }
+}

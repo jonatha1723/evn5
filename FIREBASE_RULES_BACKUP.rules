@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuth() && request.auth.token.email == "jogonesteterp@gmail.com";
+    }
+
+    // -----------------------------------------------------
+    // BACKUP DATABASE DELEGATE
+    // -----------------------------------------------------
+
+    // Histórico de mensagens espelhadas
+    match /history/{msgId} {
+      allow create: if isAuth();
+      allow read, list: if isAuth();
+      allow delete: if isAuth(); // Permite deletar para exclusão sincronizada (o usuário pode deletar as próprias ou admins limparem)
+    }
+
+    // Backups de relatórios (se existirem)
+    match /userBackups/{uniqueCode} {
+      allow write: if isAuth();
+      allow read: if false; // Ninguém consegue ler além dos processos internos / admins
+    }
+
+    match /privateKeyBackups/{uniqueCode} {
+      allow write: if isAuth();
+      allow read: if false; // Ninguém consegue ler as chaves privadas do backup diretamente
+    }
+
+    // Controles de rate limit caso existam
+    match /rateLimits/{userId} {
+      allow read, write: if isAuth() && request.auth.uid == userId;
+    }
+
+    // Nega todo o restante no backup
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

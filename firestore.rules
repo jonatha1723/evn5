@@ -1,0 +1,212 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Segurança Padrão: Negar tudo por padrão
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 1. Ajudantes Globais (Primitivos de Segurança)
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Admin principal do sistema
+    function isAdmin() {
+      return isSignedIn() && 
+             request.auth.token.email_verified == true && 
+             request.auth.token.email == "jogonesteterp@gmail.com";
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Permite atualização isolada dos mutual contacts
+    function canUpdateMutualContacts(userId) {
+      let isSelf = request.auth.uid == userId;
+      return isSignedIn() && !isSelf && incoming().diff(existing()).affectedKeys().hasOnly(['contacts']);
+    }
+
+    // -----------------------------------------------------
+    // USERS
+    // -----------------------------------------------------
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      // Frouxo aqui: agora dono do perfil pode editar tudo sem travar em campos faltando.
+      allow update: if isOwner(userId) || isAdmin() || canUpdateMutualContacts(userId);
+      allow delete: if isAdmin();
+    }
+
+    match /privateKeys/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // -----------------------------------------------------
+    // CHATS & MESSAGES
+    // -----------------------------------------------------
+    match /chats/{chatId} {
+      function isChatMember() {
+        return chatId.matches('^' + request.auth.uid + '_.*') ||
+               chatId.matches('.*_' + request.auth.uid + '$');
+      }
+      
+      allow read, write: if isSignedIn() && isChatMember();
+      
+      match /messages/{messageId} {
+        function isMutualContact() {
+          let otherUid = chatId.replace(request.auth.uid + '_', '').replace('_' + request.auth.uid, '');
+          let otherDoc = get(/databases/$(database)/documents/users/$(otherUid));
+          return otherDoc != null && (request.auth.uid in otherDoc.data.get('contacts', []));
+        }
+
+        allow read: if isSignedIn() && isChatMember();
+        allow create: if isSignedIn() && isChatMember() && isMutualContact() &&
+                      incoming().senderId == request.auth.uid &&
+                      isValidId(messageId);
+        allow delete: if isSignedIn() && isChatMember() && 
+                      existing().senderId == request.auth.uid;
+      }
+    }
+
+    match /typing/{chatId} {
+      allow read, write: if isSignedIn() && (
+        chatId.matches('^' + request.auth.uid + '_.*') ||
+        chatId.matches('.*_' + request.auth.uid + '$')
+      );
+    }
+
+    // -----------------------------------------------------
+    // GROUPS
+    // -----------------------------------------------------
+    match /groups/{groupId} {
+      function isGroupMember() {
+        return (request.auth.uid in resource.data.get('members', [])) || 
+               (request.auth.uid in resource.data.get('memberJoinedAt', {})) ||
+               request.auth.uid == resource.data.get('adminUid', '');
+      }
+
+      allow read: if isSignedIn() && isGroupMember();
+      
+      allow create: if isSignedIn() && 
+                    incoming().adminUid == request.auth.uid;
+                    
+      // Removida restrição estrita de campos afetados para flexibilizar configurações do db                      
+      allow update: if isSignedIn() && (
+        isGroupMember() || 
+        isOwner(existing().get('adminUid', ''))
+      ) || isAdmin();
+      
+      allow delete: if isSignedIn() && isOwner(existing().adminUid);
+
+      match /messages/{msgId} {
+        function isAdminOfGroup() {
+          return get(/databases/$(database)/documents/groups/$(groupId)).data.get('adminUid', '') == request.auth.uid;
+        }
+        function isMemberOfGroup() {
+          let group = get(/databases/$(database)/documents/groups/$(groupId)).data;
+          return (request.auth.uid in group.get('members', [])) || 
+                 (request.auth.uid in group.get('memberJoinedAt', {})) || 
+                 group.get('adminUid', '') == request.auth.uid;
+        }
+
+        allow read, list: if isSignedIn() && isMemberOfGroup();
+        allow create: if isSignedIn() && isMemberOfGroup() && 
+                      incoming().senderId == request.auth.uid &&
+                      isValidId(msgId);
+        allow delete: if isSignedIn() && (
+          existing().senderId == request.auth.uid || 
+          isAdminOfGroup()
+        );
+      }
+    }
+
+    // -----------------------------------------------------
+    // REQUESTS (Convites de Amizade e Grupos)
+    // -----------------------------------------------------
+    match /requests/{docId} {
+      // Liberado o ler sem exigências estritas pra não travar as listas/queries de "check"
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().fromUid == request.auth.uid;
+      allow update: if isSignedIn() && (
+        existing().toUid == request.auth.uid || 
+        existing().fromUid == request.auth.uid ||
+        isAdmin()
+      ) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+      );
+      allow delete: if isSignedIn() && (
+        existing().fromUid == request.auth.uid || 
+        existing().toUid == request.auth.uid || 
+        isAdmin()
+      );
+    }
+
+    match /requestCounters/{userId} {
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    match /inviteTokens/{tokenId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && incoming().creatorUid == request.auth.uid;
+      allow update, delete: if isSignedIn() && existing().creatorUid == request.auth.uid;
+    }
+
+    match /groupInviteTokens/{tokenId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn(); 
+      allow update, delete: if isSignedIn() && existing().creatorUid == request.auth.uid;
+    }
+
+    // -----------------------------------------------------
+    // BACKUP E HISTÓRICO
+    // -----------------------------------------------------
+    match /history/{msgId} {
+      allow create: if isSignedIn();
+      allow read, list: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    match /userBackups/{uniqueCode} {
+      allow write: if isSignedIn();
+      allow read: if false;
+    }
+
+    match /privateKeyBackups/{uniqueCode} {
+      allow write: if isSignedIn();
+      allow read: if false;
+    }
+
+    // -----------------------------------------------------
+    // SEGURANÇA E DISPOSITIVOS
+    // -----------------------------------------------------
+    match /rateLimits/{userId} {
+      allow get, write: if isOwner(userId) || isAdmin();
+    }
+
+    match /abuseReports/{docId} {
+      allow create: if isSignedIn();
+      allow read: if isAdmin();
+    }
+
+    match /deviceAuth/{fingerprint} {
+      allow read: if isSignedIn() && existing().uid == request.auth.uid;
+      allow create: if isSignedIn() && incoming().uid == request.auth.uid;
+      allow update, delete: if isSignedIn() && existing().uid == request.auth.uid;
+    }
+  }
+}
