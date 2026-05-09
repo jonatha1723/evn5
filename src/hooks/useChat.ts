@@ -10,6 +10,7 @@ import { compressImage } from '../lib/imageUtils';
 import { safeToDate, APP_VERSION } from '../lib/dateUtils';
 import { localDb } from '../lib/localDb';
 import { uploadToCloudinary } from '../lib/cloudinary';
+import { uploadFileToExternalServer, saveDocumentToExternalServer } from '../lib/externalServerApi';
 
 export const useChat = (user: User | null) => {
   console.log(`[EVN] Inicializando Core v${APP_VERSION}`);
@@ -417,6 +418,7 @@ export const useChat = (user: User | null) => {
       const msgId = doc(collection(db, colName, chatId, 'messages')).id;
 
       const msgPayload = {
+        id: msgId,
         senderId: user.uid,
         receiverId: activeContact?.uid || null,
         groupId: activeGroup?.id || null,
@@ -431,9 +433,20 @@ export const useChat = (user: User | null) => {
         senderName: userData.displayName
       };
 
-      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload);
+      // 1. Salvar no Banco Externo (Novo Sistema)
+      try {
+        await saveDocumentToExternalServer('messages', {
+          ...msgPayload,
+          timestamp: new Date().toISOString()
+        });
+      } catch (externalErr) {
+        console.warn("[External Server] Falha ao salvar mensagem externamente:", externalErr);
+      }
 
-      // 2. Salvar Espelho no Servidor de BACKUP (Usando o mesmo msgId para facilitar deleção)
+      // 2. Salvar no Servidor ATIVO (Firebase)
+      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload).catch(e => console.warn("[Firebase] Falha no firebase:", e));
+
+      // 3. Salvar Espelho no Servidor de BACKUP
       await setDoc(doc(backupDb, 'history', msgId), {
         ...msgPayload,
         senderCode: userData.uniqueCode,
@@ -490,46 +503,31 @@ export const useChat = (user: User | null) => {
     setPendingMessages(prev => [...prev, pendingMsg]);
 
     try {
+      // Usa compressão nativa do navegador via canvas (compressImage original)
       let fileToProcess: Blob | File = file;
       if (file.size > 800 * 1024) {
         fileToProcess = await compressImage(file, 800);
       }
 
-      const arrayBuffer = await fileToProcess.arrayBuffer();
-      const data = new Uint8Array(arrayBuffer);
+      // NOVO FLUXO: Upload direto para servidor externo (Ngrok/Localhost)
       
-      let encrypted;
-      if (activeGroup) {
-        encrypted = {
-          encryptedContent: btoa(String.fromCharCode(...data)),
-          encryptedKeyForSender: '',
-          encryptedKeyForReceiver: '',
-          iv: 'group-iv'
-        };
-      } else {
-        encrypted = await encryptData(
-          data,
-          userData.publicKey,
-          activeContact!.publicKey
-        );
-      }
-
-      const encryptedBlob = new Blob([encrypted.encryptedContent], { type: 'application/octet-stream' });
-      const cloudinaryResult = await uploadToCloudinary(new File([encryptedBlob], file.name, { type: 'application/octet-stream' }));
-      const fileUrl = cloudinaryResult.url;
+      const fileForUpload = new File([fileToProcess], file.name, { type: file.type });
+      const externalResult = await uploadFileToExternalServer(fileForUpload);
+      const fileUrl = externalResult.url;
 
       const colName = activeGroup ? 'groups' : 'chats';
       const msgId = doc(collection(db, colName, chatId, 'messages')).id;
 
       const msgPayload = {
+        id: msgId,
         senderId: user.uid,
         receiverId: activeContact?.uid || null,
         groupId: activeGroup?.id || null,
         chatId,
-        encryptedContent: '[Arquivo]',
-        encryptedKeyForSender: encrypted.encryptedKeyForSender,
-        encryptedKeyForReceiver: encrypted.encryptedKeyForReceiver,
-        iv: encrypted.iv,
+        encryptedContent: '[Arquivo Externo]',
+        encryptedKeyForSender: '', // Sem criptografia para arquivos pesados externos
+        encryptedKeyForReceiver: '',
+        iv: '',
         timestamp: serverTimestamp(),
         clientTimestamp,
         fileUrl,
@@ -537,10 +535,20 @@ export const useChat = (user: User | null) => {
         fileType: file.type
       };
 
-      // 1. Salvar no Servidor ATIVO
-      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload);
+      // 1. Salvar no Banco Externo (Novo Sistema)
+      try {
+        await saveDocumentToExternalServer('messages', {
+          ...msgPayload,
+          timestamp: new Date().toISOString()
+        });
+      } catch (externalErr) {
+        console.warn("[External Server] Falha ao salvar mensagem externamente:", externalErr);
+      }
 
-      // 2. Salvar Espelho no Servidor de BACKUP
+      // 2. Salvar no Servidor Firebase ATIVO
+      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload).catch(e => console.warn("[Firebase] Falha no firebase:", e));
+
+      // 3. Salvar Espelho no Servidor de BACKUP
       await setDoc(doc(backupDb, 'history', msgId), {
         ...msgPayload,
         senderCode: userData.uniqueCode,

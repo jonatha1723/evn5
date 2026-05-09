@@ -27,8 +27,11 @@ export const MessageFile: React.FC<MessageFileProps> = ({ msg, privateKey, curre
         const isMe = msg.senderId === currentUserId;
         const encryptedKey = isMe ? msg.encryptedKeyForSender : msg.encryptedKeyForReceiver;
         
+        // Se for um arquivo do novo sistema (sem chave de criptografia) ou de grupo (mock base64 passado), nao decripta assim
         if (!encryptedKey || !msg.iv) {
-          throw new Error("Chave ou IV ausente");
+          // Apenas usa a url original (ngrok ou base)
+          setDecryptedUrl(msg.fileUrl!);
+          return;
         }
 
         const decryptedBuffer = await decryptData(
