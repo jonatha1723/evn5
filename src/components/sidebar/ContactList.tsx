@@ -3,6 +3,7 @@ import { User as UserIcon, MessageSquare } from 'lucide-react';
 import { motion } from 'motion/react';
 import { UserData } from '../../types';
 import { safeToDate, getRelativeTime } from '../../lib/dateUtils';
+import { AdminBadge } from '../AdminBadge';
 
 interface ContactListProps {
   contacts: UserData[];
@@ -57,11 +58,14 @@ export const ContactList: React.FC<ContactListProps> = ({
                 {/* Info */}
                 <div className="flex-1 overflow-hidden">
                   <div className="flex items-center justify-between">
-                    <p className={`font-semibold truncate transition-colors ${
-                      isActive ? 'text-emerald-50' : 'text-zinc-100 group-hover:text-white'
-                    }`}>
-                      {contact.displayName}
-                    </p>
+                    <div className="flex items-center gap-1 overflow-hidden">
+                      <p className={`font-semibold truncate transition-colors ${
+                        isActive ? 'text-emerald-50' : 'text-zinc-100 group-hover:text-white'
+                      }`}>
+                        {contact.displayName}
+                      </p>
+                      <AdminBadge uid={contact.uid} email={contact.email} />
+                    </div>
                     {/* Indicador de conversa no desktop */}
                     <MessageSquare className={`w-3.5 h-3.5 hidden md:block shrink-0 transition-all ${
                       isActive ? 'text-emerald-500' : 'text-zinc-700 group-hover:text-zinc-500'

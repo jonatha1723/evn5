@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { DecryptedMessage, UserData, MessagePosition } from '../../types';
 import { MessageFile } from './MessageFile';
 import { MessageReply } from './MessageReply';
+import { AdminBadge } from '../AdminBadge';
 
 interface MessageItemProps {
   msg: DecryptedMessage;
@@ -86,8 +87,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         )}
 
         {msg.groupId && !isMe && msg.senderName && (
-          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1.5 drop-shadow-sm">
+          <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest mb-1.5 drop-shadow-sm flex items-center gap-1">
             {msg.senderName}
+            <AdminBadge uid={msg.senderId} />
           </p>
         )}
         

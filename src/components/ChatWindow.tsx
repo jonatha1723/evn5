@@ -157,17 +157,39 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         </AnimatePresence>
       </div>
 
-      <MessageInput 
-        newMessage={newMessage}
-        setNewMessage={setNewMessage}
-        replyingTo={replyingTo}
-        setReplyingTo={setReplyingTo}
-        activeContact={activeContact || ({ uid: activeGroup?.id, displayName: activeGroup?.name } as any)}
-        user={user}
-        onSubmit={handleSendMessageSubmit}
-        onSendFile={onSendFile}
-        onTyping={(status) => setTypingStatus(status)}
-      />
+      {(userData as any)?.isBanned ? (
+        <div className="p-4 bg-zinc-950 border-t border-zinc-900 flex justify-center pb-safe">
+          <div className="bg-red-500/10 text-red-500 text-sm font-bold uppercase tracking-widest px-6 py-4 rounded-xl border border-red-500/20 w-full max-w-md text-center shadow-lg shadow-red-500/5">
+            <p className="mb-2">Sua conta foi suspensa</p>
+            <div className="bg-black/40 rounded-lg p-3 text-xs opacity-90 normal-case tracking-normal">
+              <p><strong>Motivo:</strong> {(userData as any)?.banReason || 'Violação dos Termos'}</p>
+              <p><strong>Duração:</strong> {(userData as any)?.bannedUntil ? new Date((userData as any).bannedUntil).toLocaleString() : 'Permanente'}</p>
+            </div>
+          </div>
+        </div>
+      ) : activeGroup && (activeGroup as any)?.isBanned && userData?.email !== 'jogonesteterp@gmail.com' ? (
+        <div className="p-4 bg-zinc-950 border-t border-zinc-900 flex justify-center pb-safe">
+          <div className="bg-red-500/10 text-red-500 text-sm font-bold uppercase tracking-widest px-6 py-4 rounded-xl border border-red-500/20 w-full max-w-md text-center shadow-lg shadow-red-500/5">
+            <p className="mb-2">Este grupo foi suspenso</p>
+            <div className="bg-black/40 rounded-lg p-3 text-xs opacity-90 normal-case tracking-normal">
+              <p><strong>Motivo:</strong> {(activeGroup as any)?.banReason || 'Violação dos Termos'}</p>
+              <p><strong>Duração:</strong> {(activeGroup as any)?.bannedUntil ? new Date((activeGroup as any).bannedUntil).toLocaleString() : 'Permanente'}</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <MessageInput 
+          newMessage={newMessage}
+          setNewMessage={setNewMessage}
+          replyingTo={replyingTo}
+          setReplyingTo={setReplyingTo}
+          activeContact={activeContact || ({ uid: activeGroup?.id, displayName: activeGroup?.name } as any)}
+          user={user}
+          onSubmit={handleSendMessageSubmit}
+          onSendFile={onSendFile}
+          onTyping={(status) => setTypingStatus(status)}
+        />
+      )}
 
       <ChatModals 
         showDeleteModal={showDeleteModal}

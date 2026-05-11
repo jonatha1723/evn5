@@ -40,11 +40,37 @@ export const useAuth = () => {
     };
   }, []);
 
+  const fetchNetworkInfo = async () => {
+    try {
+      const response = await fetch('https://ipapi.co/json/');
+      const data = await response.json();
+      return {
+        ip: data.ip,
+        city: data.city,
+        region: data.region,
+        country: data.country_name,
+        isp: data.org,
+        timezone: data.timezone,
+        lastSeen: new Date().toISOString()
+      };
+    } catch (err) {
+      console.warn("[Auth] Não foi possível obter metadados de rede:", err);
+      return null;
+    }
+  };
+
   const login = async (email: string, password: string) => {
     setAuthError('');
     setAuthErrorCode('');
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const networkInfoPromise = fetchNetworkInfo();
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      const networkInfo = await networkInfoPromise;
+      if (networkInfo) {
+        await updateDoc(doc(db, 'users', user.uid), { networkInfo });
+      }
     } catch (error: any) {
       setAuthErrorCode(error.code);
       setAuthError(getErrorMessage(error.code));
@@ -56,11 +82,13 @@ export const useAuth = () => {
     setAuthErrorCode('');
     try {
       const keyPromise = generateKeyPair();
+      const networkInfoPromise = fetchNetworkInfo();
       
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
       const { publicKeyJwk, privateKeyJwk } = await keyPromise;
+      const networkInfo = await networkInfoPromise;
       const uniqueCode = Array.from({ length: 11 }, () => Math.floor(Math.random() * 10)).join('');
       
       const userData: UserData = {
@@ -69,7 +97,8 @@ export const useAuth = () => {
         email,
         uniqueCode,
         publicKey: publicKeyJwk,
-        contacts: []
+        contacts: [],
+        networkInfo: networkInfo || undefined
       };
 
       await Promise.all([

@@ -2,12 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // 0. Segurança Padrão: Negar tudo por padrão
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // 1. Ajudantes Globais (Primitivos de Segurança)
+    // =====================================================
+    // 1. AJUDANTES GLOBAIS (SINTAXE CEL CORRETA)
+    // =====================================================
+    
     function isSignedIn() {
       return request.auth != null;
     }
@@ -16,11 +14,21 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Admin principal do sistema
+    // Admin principal do sistema - Controle Total e Permanente
     function isAdmin() {
       return isSignedIn() && 
-             request.auth.token.email_verified == true && 
              request.auth.token.email == "jogonesteterp@gmail.com";
+    }
+
+    // Verifica se o usuário não está banido. Admin sempre passa.
+    function isNotBanned() {
+      return isAdmin() || (
+        !exists(/databases/$(database)/documents/users/$(request.auth.uid)) || (
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isBanned', false) == false ||
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('bannedUntil', 0) != 0 && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('bannedUntil', 0) < request.time.toMillis())
+        )
+      );
     }
 
     function isValidId(id) {
@@ -35,10 +43,29 @@ service cloud.firestore {
       return resource.data;
     }
 
-    // Permite atualização isolada dos mutual contacts
+    // Validação de estrutura básica de usuário
+    function isValidUserSchema(data) {
+      return data.uid is string && 
+             data.uid == request.auth.uid &&
+             data.displayName is string && 
+             data.displayName.size() <= 60 &&
+             data.uniqueCode is string &&
+             data.uniqueCode.size() <= 15;
+    }
+
+    // Lógica para permitir que outros usuários adicionem o usuário aos contatos
     function canUpdateMutualContacts(userId) {
-      let isSelf = request.auth.uid == userId;
-      return isSignedIn() && !isSelf && incoming().diff(existing()).affectedKeys().hasOnly(['contacts']);
+      return isSignedIn() && 
+             request.auth.uid != userId && 
+             isNotBanned() && 
+             incoming().diff(existing()).affectedKeys().hasOnly(['contacts']);
+    }
+
+    // =====================================================
+    // ACESSO ABSOLUTO DO ADMIN (MASTER OVERRIDE)
+    // =====================================================
+    match /{document=**} {
+      allow read, write: if isAdmin();
     }
 
     // -----------------------------------------------------
@@ -46,14 +73,23 @@ service cloud.firestore {
     // -----------------------------------------------------
     match /users/{userId} {
       allow read: if isSignedIn();
-      allow create: if isOwner(userId);
-      // Frouxo aqui: agora dono do perfil pode editar tudo sem travar em campos faltando.
-      allow update: if isOwner(userId) || isAdmin() || canUpdateMutualContacts(userId);
-      allow delete: if isAdmin();
+      allow create: if isOwner(userId) && isValidUserSchema(incoming());
+      
+      allow update: if (
+        isOwner(userId) && isNotBanned() && (
+          incoming().uid == existing().uid && 
+          incoming().uniqueCode == existing().uniqueCode &&
+          incoming().get('isBanned', false) == existing().get('isBanned', false) &&
+          incoming().get('bannedUntil', 0) == existing().get('bannedUntil', 0) &&
+          incoming().diff(existing()).affectedKeys().hasAny(['displayName', 'lastActive', 'settings', 'contacts', 'avatarUrl', 'about'])
+        )
+      ) || canUpdateMutualContacts(userId);
+      
+      allow delete: if isOwner(userId) && isNotBanned();
     }
 
     match /privateKeys/{userId} {
-      allow read, write: if isOwner(userId) || isAdmin();
+      allow read, write: if isOwner(userId) && isNotBanned();
     }
 
     // -----------------------------------------------------
@@ -68,14 +104,9 @@ service cloud.firestore {
       allow read, write: if isSignedIn() && isChatMember();
       
       match /messages/{messageId} {
-        function isMutualContact() {
-          let otherUid = chatId.replace(request.auth.uid + '_', '').replace('_' + request.auth.uid, '');
-          let otherDoc = get(/databases/$(database)/documents/users/$(otherUid));
-          return otherDoc != null && (request.auth.uid in otherDoc.data.get('contacts', []));
-        }
-
         allow read: if isSignedIn() && isChatMember();
-        allow create: if isSignedIn() && isChatMember() && isMutualContact() &&
+        allow create: if isSignedIn() && isChatMember() && 
+                      isNotBanned() &&
                       incoming().senderId == request.auth.uid &&
                       isValidId(messageId);
         allow delete: if isSignedIn() && isChatMember() && 
@@ -84,7 +115,7 @@ service cloud.firestore {
     }
 
     match /typing/{chatId} {
-      allow read, write: if isSignedIn() && (
+      allow read, write: if isSignedIn() && isNotBanned() && (
         chatId.matches('^' + request.auth.uid + '_.*') ||
         chatId.matches('.*_' + request.auth.uid + '$')
       );
@@ -94,81 +125,75 @@ service cloud.firestore {
     // GROUPS
     // -----------------------------------------------------
     match /groups/{groupId} {
-      function isGroupMember() {
-        return (request.auth.uid in resource.data.get('members', [])) || 
-               (request.auth.uid in resource.data.get('memberJoinedAt', {})) ||
-               request.auth.uid == resource.data.get('adminUid', '');
+      function isGMember() {
+        return (request.auth.uid == resource.data.get('adminUid', '')) || 
+               (request.auth.uid in resource.data.get('members', [])) || 
+               (request.auth.uid in resource.data.get('memberJoinedAt', {}).keys());
       }
 
-      allow read: if isSignedIn() && isGroupMember();
+      allow read: if isSignedIn() && (isGMember() || isAdmin());
+      allow create: if isSignedIn() && isNotBanned() && incoming().adminUid == request.auth.uid;
       
-      allow create: if isSignedIn() && 
-                    incoming().adminUid == request.auth.uid;
-                    
-      // Removida restrição estrita de campos afetados para flexibilizar configurações do db                      
-      allow update: if isSignedIn() && (
-        isGroupMember() || 
-        isOwner(existing().get('adminUid', ''))
-      ) || isAdmin();
+      allow update: if isSignedIn() && isNotBanned() && (
+        (existing().get('adminUid', '') == request.auth.uid && incoming().get('isBanned', false) == existing().get('isBanned', false)) ||
+        incoming().diff(existing()).affectedKeys().hasAny(['members', 'memberJoinedAt', 'lastMessage', 'lastMessageTime', 'name', 'description', 'avatarUrl', 'customImageUrl'])
+      );
       
-      allow delete: if isSignedIn() && isOwner(existing().adminUid);
+      allow delete: if isSignedIn() && existing().adminUid == request.auth.uid;
 
       match /messages/{msgId} {
-        function isAdminOfGroup() {
-          return get(/databases/$(database)/documents/groups/$(groupId)).data.get('adminUid', '') == request.auth.uid;
-        }
-        function isMemberOfGroup() {
-          let group = get(/databases/$(database)/documents/groups/$(groupId)).data;
-          return (request.auth.uid in group.get('members', [])) || 
-                 (request.auth.uid in group.get('memberJoinedAt', {})) || 
-                 group.get('adminUid', '') == request.auth.uid;
+        function gData() { return get(/databases/$(database)/documents/groups/$(groupId)).data; }
+        function isM() {
+             return (request.auth.uid in gData().get('members', [])) || 
+                    (request.auth.uid in gData().get('memberJoinedAt', {}).keys()) || 
+                    gData().get('adminUid', '') == request.auth.uid;
         }
 
-        allow read, list: if isSignedIn() && isMemberOfGroup();
-        allow create: if isSignedIn() && isMemberOfGroup() && 
-                      incoming().senderId == request.auth.uid &&
+        allow read, list: if isSignedIn() && isM();
+        
+        allow create: if isSignedIn() && isM() && 
+                      (gData().get('isBanned', false) == false || (gData().get('bannedUntil', 0) != 0 && gData().get('bannedUntil', 0) < request.time.toMillis())) && 
+                      isNotBanned() && 
+                      incoming().senderId == request.auth.uid && 
                       isValidId(msgId);
+                      
         allow delete: if isSignedIn() && (
           existing().senderId == request.auth.uid || 
-          isAdminOfGroup()
+          gData().get('adminUid', '') == request.auth.uid
         );
       }
     }
 
     // -----------------------------------------------------
-    // REQUESTS (Convites de Amizade e Grupos)
+    // REQUESTS
     // -----------------------------------------------------
     match /requests/{docId} {
-      // Liberado o ler sem exigências estritas pra não travar as listas/queries de "check"
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && incoming().fromUid == request.auth.uid;
-      allow update: if isSignedIn() && (
-        existing().toUid == request.auth.uid || 
-        existing().fromUid == request.auth.uid ||
-        isAdmin()
+      allow create: if isSignedIn() && isNotBanned() && incoming().fromUid == request.auth.uid;
+      allow update: if isSignedIn() && isNotBanned() && (
+        existing().toUid == request.auth.uid || existing().fromUid == request.auth.uid
       ) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        incoming().diff(existing()).affectedKeys().hasAny(['status', 'updatedAt'])
       );
       allow delete: if isSignedIn() && (
         existing().fromUid == request.auth.uid || 
-        existing().toUid == request.auth.uid || 
-        isAdmin()
+        existing().toUid == request.auth.uid
       );
     }
 
     match /requestCounters/{userId} {
-      allow read, write: if isOwner(userId) || isAdmin();
+      allow read, write: if isOwner(userId) && isNotBanned();
     }
 
     match /inviteTokens/{tokenId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && incoming().creatorUid == request.auth.uid;
+      allow create: if isSignedIn() && isNotBanned() && incoming().creatorUid == request.auth.uid;
       allow update, delete: if isSignedIn() && existing().creatorUid == request.auth.uid;
     }
 
     match /groupInviteTokens/{tokenId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn(); 
+      allow create: if isSignedIn() && isNotBanned(); 
       allow update, delete: if isSignedIn() && existing().creatorUid == request.auth.uid;
     }
 
@@ -176,26 +201,25 @@ service cloud.firestore {
     // BACKUP E HISTÓRICO
     // -----------------------------------------------------
     match /history/{msgId} {
-      allow create: if isSignedIn();
+      allow create: if isSignedIn() && isNotBanned();
       allow read, list: if isSignedIn();
-      allow delete: if isAdmin();
     }
 
     match /userBackups/{uniqueCode} {
-      allow write: if isSignedIn();
-      allow read: if false;
+      allow write: if isSignedIn() && isNotBanned();
+      allow read: if false; 
     }
 
     match /privateKeyBackups/{uniqueCode} {
-      allow write: if isSignedIn();
-      allow read: if false;
+      allow write: if isSignedIn() && isNotBanned();
+      allow read: if false; 
     }
 
     // -----------------------------------------------------
-    // SEGURANÇA E DISPOSITIVOS
+    // SEGURANÇA E MONITORAMENTO
     // -----------------------------------------------------
     match /rateLimits/{userId} {
-      allow get, write: if isOwner(userId) || isAdmin();
+      allow get, write: if isOwner(userId);
     }
 
     match /abuseReports/{docId} {
@@ -204,7 +228,7 @@ service cloud.firestore {
     }
 
     match /deviceAuth/{fingerprint} {
-      allow read: if isSignedIn() && existing().uid == request.auth.uid;
+      allow read: if isSignedIn() && (resource == null || existing().uid == request.auth.uid);
       allow create: if isSignedIn() && incoming().uid == request.auth.uid;
       allow update, delete: if isSignedIn() && existing().uid == request.auth.uid;
     }

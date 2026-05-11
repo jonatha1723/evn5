@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { UserData } from '../../types';
 import { safeToDate, getRelativeTime } from '../../lib/dateUtils';
 import { AnimatePresence, motion } from 'motion/react';
+import { AdminBadge } from '../AdminBadge';
 
 interface ChatHeaderProps {
   activeContact: UserData;
@@ -84,89 +85,110 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
 
   return (
     <>
-      <div className="h-20 border-b border-[var(--border-color)] flex items-center px-4 md:px-8 bg-[var(--bg-chat)] backdrop-blur-xl z-20 sticky top-0 transition-colors duration-300">
-        <div className="flex items-center gap-4 w-full">
-        <button 
-          onClick={onBack}
-          className="md:hidden p-2 text-zinc-500 hover:text-white active:bg-zinc-900 rounded-xl transition-all"
-        >
-          <ArrowLeft className="w-6 h-6" />
-        </button>
-        <div className={`w-12 h-12 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center font-bold text-xl shadow-inner ${activeContact.email === 'Grupo' ? 'text-emerald-400 bg-emerald-500/5 border-emerald-500/20' : 'text-emerald-500'}`}>
-          {activeContact.displayName.charAt(0).toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0 overflow-hidden">
-          <h2 className="font-bold text-lg truncate text-white tracking-tight">{activeContact.displayName}</h2>
-          {presenceStatus}
-        </div>
-        {activeContact.email === 'Grupo' && onOpenGroupSettings && (
-          <button
-            onClick={onOpenGroupSettings}
-            className="p-2.5 text-zinc-500 hover:text-emerald-400 hover:bg-emerald-500/5 rounded-xl transition-all shrink-0"
-            title="Opcoes do grupo"
+      <div className="h-20 border-b border-zinc-800/30 flex items-center px-4 md:px-8 bg-zinc-950/80 backdrop-blur-2xl z-20 sticky top-0 transition-all duration-300">
+        <div className="flex items-center gap-4 w-full max-w-6xl mx-auto">
+          <button 
+            onClick={onBack}
+            className="md:hidden p-2 text-zinc-500 hover:text-white active:bg-zinc-900 rounded-xl transition-all"
           >
-            <Settings className="w-5 h-5" />
+            <ArrowLeft className="w-6 h-6" />
           </button>
-        )}
-        {hasMessages && (
-          <button
-            onClick={onClearChat}
-            className="p-2.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/5 rounded-xl transition-all shrink-0"
-            title="Limpar Conversa"
-          >
-            <Trash2 className="w-5 h-5" />
-          </button>
-        )}
-        
-        {activeContact.email !== 'Grupo' && (
-          <div className="relative shrink-0" ref={optionsRef}>
-            <button
-              onClick={() => setShowOptions(!showOptions)}
-              className={`p-2.5 rounded-xl transition-all ${showOptions ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300'}`}
-              title="Mais opções"
-            >
-              <MoreVertical className="w-5 h-5" />
-            </button>
-            
-            <AnimatePresence>
-              {showOptions && (
-                <motion.div
-                  initial={{ opacity: 0, y: -5 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -5 }}
-                  transition={{ duration: 0.15 }}
-                  style={{ right: 0, top: 'calc(100% + 4px)' }}
-                  className="absolute w-[200px] bg-zinc-900 border border-zinc-800 rounded-2xl shadow-xl z-[100] flex flex-col py-1"
-                >
-                  <button 
-                    onClick={() => { setShowNicknameModal(true); setNicknameInput(currentCustomName); setShowOptions(false); }}
-                    className="flex items-center gap-3 w-full px-4 py-3 text-sm text-zinc-300 hover:text-white hover:bg-zinc-800/50 transition-colors text-left"
-                  >
-                    <Edit2 className="w-4 h-4 shrink-0 text-emerald-500" />
-                    <span className="truncate">Personalizar Apelido</span>
-                  </button>
-                  <div className="w-full h-px bg-zinc-800/50 my-1" />
-                  <button 
-                    onClick={() => { setShowConfirmRemove(true); setShowOptions(false); }}
-                    className="flex items-center gap-3 w-full px-4 py-3 text-sm text-yellow-500 hover:bg-yellow-500/10 transition-colors text-left"
-                  >
-                    <UserX className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Remover Contato</span>
-                  </button>
-                  <button 
-                    onClick={() => { setShowConfirmBlock(true); setShowOptions(false); }}
-                    className="flex items-center gap-3 w-full px-4 py-3 text-sm text-red-500 hover:bg-red-500/10 transition-colors text-left"
-                  >
-                    <Ban className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Bloquear Usuário</span>
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+          
+          <div className="relative shrink-0">
+            <div className={`w-12 h-12 rounded-2xl bg-zinc-900 flex items-center justify-center font-bold text-xl shadow-lg ring-1 ring-zinc-800 transition-all transform hover:scale-105 ${activeContact.email === 'Grupo' ? 'text-emerald-400 bg-emerald-500/5 ring-emerald-500/20' : 'text-emerald-500'}`}>
+              {activeContact.displayName.charAt(0).toUpperCase()}
+            </div>
+            {activeContact.email !== 'Grupo' && (
+              <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-zinc-950 shadow-sm ${presenceStatus.props.children.toString().includes('ON') ? 'bg-emerald-500' : 'bg-zinc-600'}`} />
+            )}
           </div>
-        )}
+
+          <div className="flex-1 min-w-0 overflow-hidden ml-1">
+            <div className="flex items-center gap-1.5 overflow-hidden">
+              <h2 className="font-bold text-lg truncate text-white tracking-tight leading-tight group cursor-default">
+                {activeContact.displayName}
+              </h2>
+              {activeContact.email !== 'Grupo' && <AdminBadge uid={activeContact.uid} email={activeContact.email} />}
+            </div>
+            <div className="flex items-center gap-2">
+              {presenceStatus}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 md:gap-3">
+            {activeContact.email === 'Grupo' && onOpenGroupSettings && (
+              <button
+                onClick={onOpenGroupSettings}
+                className="p-2.5 text-zinc-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-xl transition-all shrink-0 active:scale-90"
+                title="Opções do grupo"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            )}
+            
+            {hasMessages && (
+              <button
+                onClick={onClearChat}
+                className="p-2.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all shrink-0 active:scale-90"
+                title="Limpar Conversa"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            )}
+            
+            {activeContact.email !== 'Grupo' && (
+              <div className="relative shrink-0" ref={optionsRef}>
+                <button
+                  onClick={() => setShowOptions(!showOptions)}
+                  className={`p-2.5 rounded-xl transition-all active:scale-90 ${showOptions ? 'bg-emerald-500/10 text-emerald-400' : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-300'}`}
+                  title="Mais opções"
+                >
+                  <MoreVertical className="w-5 h-5" />
+                </button>
+                
+                <AnimatePresence>
+                  {showOptions && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      transition={{ type: "spring", damping: 20, stiffness: 300 }}
+                      style={{ right: 0, top: 'calc(100% + 8px)' }}
+                      className="absolute w-[220px] bg-zinc-900/90 backdrop-blur-xl border border-zinc-800 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[100] flex flex-col py-2"
+                    >
+                      <button 
+                        onClick={() => { setShowNicknameModal(true); setNicknameInput(currentCustomName); setShowOptions(false); }}
+                        className="flex items-center gap-3 w-full px-5 py-3.5 text-sm text-zinc-300 hover:text-white hover:bg-emerald-500/10 transition-colors text-left"
+                      >
+                        <Edit2 className="w-4 h-4 shrink-0 text-emerald-500" />
+                        <span className="font-medium">Personalizar Apelido</span>
+                      </button>
+                      
+                      <div className="mx-4 my-1 h-px bg-zinc-800/50" />
+                      
+                      <button 
+                        onClick={() => { setShowConfirmRemove(true); setShowOptions(false); }}
+                        className="flex items-center gap-3 w-full px-5 py-3.5 text-sm text-yellow-500 hover:bg-yellow-500/10 transition-colors text-left font-medium"
+                      >
+                        <UserX className="w-4 h-4 shrink-0" />
+                        <span>Remover Contato</span>
+                      </button>
+                      
+                      <button 
+                        onClick={() => { setShowConfirmBlock(true); setShowOptions(false); }}
+                        className="flex items-center gap-3 w-full px-5 py-3.5 text-sm text-red-500 hover:bg-red-500/10 transition-colors text-left font-medium"
+                      >
+                        <Ban className="w-4 h-4 shrink-0" />
+                        <span>Bloquear Usuário</span>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
 
       {createPortal(
         <AnimatePresence>

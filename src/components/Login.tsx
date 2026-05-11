@@ -20,7 +20,7 @@ interface LoginProps {
 
 export const Login: React.FC<LoginProps> = (props) => {
   return (
-    <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-zinc-100 font-sans overflow-hidden relative">
+    <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-zinc-100 font-sans overflow-hidden relative notranslate" translate="no">
       <LoginBackground />
 
       <motion.div 

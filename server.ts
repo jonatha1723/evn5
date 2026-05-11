@@ -6,6 +6,27 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.get("/api/admin/logs", async (req, res) => {
+    try {
+      // Endpoint no servidor externo de logs via Cloudflare Tunnel
+      const response = await fetch("https://till-platform-pixels-mold.trycloudflare.com/api/logs", {
+        headers: {
+          "Authorization": "Bearer evn_secret_key_8b3f2a1d",
+          "x-api-key": "evn_secret_key_8b3f2a1d"
+        }
+      });
+      
+      if (!response.ok) {
+        return res.status(response.status).json({ error: "Falha ao conectar no servidor de logs", details: await response.text() });
+      }
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

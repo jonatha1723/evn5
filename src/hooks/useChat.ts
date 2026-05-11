@@ -10,7 +10,6 @@ import { compressImage } from '../lib/imageUtils';
 import { safeToDate, APP_VERSION } from '../lib/dateUtils';
 import { localDb } from '../lib/localDb';
 import { uploadToCloudinary } from '../lib/cloudinary';
-import { uploadFileToExternalServer, saveDocumentToExternalServer } from '../lib/externalServerApi';
 
 export const useChat = (user: User | null) => {
   console.log(`[EVN] Inicializando Core v${APP_VERSION}`);
@@ -51,7 +50,7 @@ export const useChat = (user: User | null) => {
     const firestoreIds = new Set(messages.map(m => m.id));
     const firestoreTimes = new Set(messages.map(getMessageTime));
     
-    // Filtramos backups que já existem nas ativas do Servidor 2
+    // Filtramos backups que já existem nas ativas
     const filteredBackup = backupMessages.filter(m => 
       !firestoreIds.has(m.id) && !firestoreTimes.has(getMessageTime(m))
     );
@@ -242,6 +241,11 @@ export const useChat = (user: User | null) => {
     fetchBackup();
   }, [user?.uid, activeContact?.uid, userData?.uniqueCode, privateKey]);
 
+  const localDeletedMessagesRef = useRef(localDeletedMessages);
+  useEffect(() => {
+    localDeletedMessagesRef.current = localDeletedMessages;
+  }, [localDeletedMessages]);
+
   useEffect(() => {
     if (!user || (!activeContact && !activeGroup) || !privateKey) {
       setMessages([]);
@@ -285,7 +289,7 @@ export const useChat = (user: User | null) => {
           .map(change => change.doc.id);
           
         if (removedIds.length > 0) {
-          await localDb.deleteMessages(removedIds);
+          localDb.deleteMessages(removedIds).catch(() => {});
           setMessages(prev => prev.filter(m => !removedIds.includes(m.id)));
         }
 
@@ -296,7 +300,7 @@ export const useChat = (user: User | null) => {
           .map(change => change.doc);
 
         if (changes.length > 0) {
-          await processDocs(changes);
+          processDocs(changes);
         }
       }, (err) => {
         console.warn("[Chat] Snapshot error:", err.message);
@@ -339,8 +343,8 @@ export const useChat = (user: User | null) => {
 
       const newMsgs = await Promise.all(decryptPromises);
       
-      // Salvar no Banco Local
-      await localDb.saveMessages(newMsgs);
+      // Salvar no Banco Local (Background)
+      localDb.saveMessages(newMsgs).catch(() => {});
       
       if (currentVersion === snapshotVersionRef.current) {
         setMessages(prev => {
@@ -350,7 +354,7 @@ export const useChat = (user: User | null) => {
           return Array.from(uniqueMap.values())
             .filter(m => (activeGroup ? (m.clientTimestamp || 0) >= joinedAt : true))
             .sort((a, b) => getMessageTime(a) - getMessageTime(b))
-            .filter(m => !localDeletedMessages.has(m.id));
+            .filter(m => !localDeletedMessagesRef.current.has(m.id));
         });
       }
     };
@@ -360,7 +364,7 @@ export const useChat = (user: User | null) => {
     return () => {
       if (activeUnsub) activeUnsub();
     };
-  }, [user?.uid, activeContact?.uid, activeGroup?.id, privateKey, localDeletedMessages]);
+  }, [user?.uid, activeContact?.uid, activeGroup?.id, privateKey]);
 
   const sendMessage = async (text: string, replyToId?: string) => {
     if (!user || (!activeContact && !activeGroup) || !userData || !text.trim()) return;
@@ -417,7 +421,7 @@ export const useChat = (user: User | null) => {
       const colName = activeGroup ? 'groups' : 'chats';
       const msgId = doc(collection(db, colName, chatId, 'messages')).id;
 
-      const msgPayload = {
+      const msgPayload: any = {
         id: msgId,
         senderId: user.uid,
         receiverId: activeContact?.uid || null,
@@ -433,20 +437,13 @@ export const useChat = (user: User | null) => {
         senderName: userData.displayName
       };
 
-      // 1. Salvar no Banco Externo (Novo Sistema)
-      try {
-        await saveDocumentToExternalServer('messages', {
-          ...msgPayload,
-          timestamp: new Date().toISOString()
-        });
-      } catch (externalErr) {
-        console.warn("[External Server] Falha ao salvar mensagem externamente:", externalErr);
-      }
+      // 1. Salvar no Servidor ATIVO (Firebase)
+      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload).catch(e => {
+        console.error("[Firebase] Falha no firebase:", e);
+        handleFirestoreError(e, OperationType.WRITE, 'messages');
+      });
 
-      // 2. Salvar no Servidor ATIVO (Firebase)
-      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload).catch(e => console.warn("[Firebase] Falha no firebase:", e));
-
-      // 3. Salvar Espelho no Servidor de BACKUP
+      // 2. Salvar Espelho no Servidor de BACKUP
       await setDoc(doc(backupDb, 'history', msgId), {
         ...msgPayload,
         senderCode: userData.uniqueCode,
@@ -456,12 +453,21 @@ export const useChat = (user: User | null) => {
 
     } catch (error) {
       setPendingMessages(prev => prev.filter(m => m.clientTimestamp !== clientTimestamp));
-      handleFirestoreError(error, OperationType.WRITE, 'messages');
+      console.error("[Chat] Erro ao enviar mensagem:", error);
     }
   };
 
   const sendFile = async (file: File) => {
     if (!user || (!activeContact && !activeGroup) || !userData) return;
+    
+    // Validar configuração do Cloudinary
+    const cloudinaryCloud = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+    const cloudinaryPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+    
+    if (!cloudinaryCloud || !cloudinaryPreset || cloudinaryCloud === 'demo' || cloudinaryPreset === 'unsigned_preset') {
+      alert("Configuração do Cloudinary ausente. Por favor, configure as variáveis VITE_CLOUDINARY_CLOUD_NAME e VITE_CLOUDINARY_UPLOAD_PRESET no AI Studio.");
+      return;
+    }
     
     if (!activeGroup && activeContact && !userData.contacts?.includes(activeContact.uid)) {
       throw new Error("Você não pode enviar arquivos. O contato foi excluído.");
@@ -471,7 +477,15 @@ export const useChat = (user: User | null) => {
       throw new Error("Voce esta mutado neste grupo.");
     }
     
-    if (!file.type.startsWith('image/')) {
+    let fileType = file.type;
+    if (!fileType && file.name) {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext || '')) {
+        fileType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
+      }
+    }
+
+    if (!fileType.startsWith('image/')) {
       throw new Error("Apenas imagens são permitidas.");
     }
 
@@ -494,10 +508,11 @@ export const useChat = (user: User | null) => {
       clientTimestamp,
       fileUrl: localUrl,
       fileName: file.name,
-      fileType: file.type,
+      fileType: fileType,
       isUploading: true,
       isPending: true,
-      localUrl
+      localUrl,
+      senderName: userData.displayName
     };
 
     setPendingMessages(prev => [...prev, pendingMsg]);
@@ -509,44 +524,36 @@ export const useChat = (user: User | null) => {
         fileToProcess = await compressImage(file, 800);
       }
 
-      // NOVO FLUXO: Upload direto para servidor externo (Ngrok/Localhost)
-      
-      const fileForUpload = new File([fileToProcess], file.name, { type: file.type });
-      const externalResult = await uploadFileToExternalServer(fileForUpload);
-      const fileUrl = externalResult.url;
+      // 1. Upload para Cloudinary
+      const { url: fileUrl } = await uploadToCloudinary(fileToProcess as File);
+      console.log("[Chat] Upload concluído. URL:", fileUrl);
 
       const colName = activeGroup ? 'groups' : 'chats';
       const msgId = doc(collection(db, colName, chatId, 'messages')).id;
 
-      const msgPayload = {
+      const msgPayload: any = {
         id: msgId,
         senderId: user.uid,
         receiverId: activeContact?.uid || null,
         groupId: activeGroup?.id || null,
         chatId,
-        encryptedContent: '[Arquivo Externo]',
-        encryptedKeyForSender: '', // Sem criptografia para arquivos pesados externos
+        encryptedContent: '[Imagem]',
+        encryptedKeyForSender: '', 
         encryptedKeyForReceiver: '',
         iv: '',
         timestamp: serverTimestamp(),
         clientTimestamp,
         fileUrl,
         fileName: file.name,
-        fileType: file.type
+        fileType: fileType,
+        senderName: userData.displayName
       };
 
-      // 1. Salvar no Banco Externo (Novo Sistema)
-      try {
-        await saveDocumentToExternalServer('messages', {
-          ...msgPayload,
-          timestamp: new Date().toISOString()
-        });
-      } catch (externalErr) {
-        console.warn("[External Server] Falha ao salvar mensagem externamente:", externalErr);
-      }
-
       // 2. Salvar no Servidor Firebase ATIVO
-      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload).catch(e => console.warn("[Firebase] Falha no firebase:", e));
+      await setDoc(doc(db, colName, chatId, 'messages', msgId), msgPayload).catch(e => {
+        console.error("[Firebase] Falha no firebase:", e);
+        handleFirestoreError(e, OperationType.WRITE, 'messages');
+      });
 
       // 3. Salvar Espelho no Servidor de BACKUP
       await setDoc(doc(backupDb, 'history', msgId), {
@@ -559,7 +566,7 @@ export const useChat = (user: User | null) => {
     } catch (error) {
       setPendingMessages(prev => prev.filter(m => m.clientTimestamp !== clientTimestamp));
       URL.revokeObjectURL(localUrl);
-      handleFirestoreError(error, OperationType.WRITE, 'messages');
+      console.error("[Chat] Erro ao enviar arquivo:", error);
     }
   };
 

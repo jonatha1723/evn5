@@ -1,5 +1,6 @@
+// src/components/Sidebar.tsx
 import { useState, useEffect, FC } from 'react';
-import { Trash2, AlertTriangle, Loader2, MessageSquare, Users as UsersIcon } from 'lucide-react';
+import { Trash2, AlertTriangle, Loader2, MessageSquare, Users as UsersIcon, Server } from 'lucide-react';
 import { UserData, Group, GroupRequest } from '../types';
 import { SidebarHeader } from './sidebar/SidebarHeader';
 import { SettingsModal } from './sidebar/SettingsModal';
@@ -9,6 +10,7 @@ import { APP_VERSION } from '../lib/dateUtils';
 import { UserCodeCard } from './sidebar/UserCodeCard';
 import { AddContactForm } from './sidebar/AddContactForm';
 import { ContactList } from './sidebar/ContactList';
+import { AdminDashboard } from './sidebar/AdminDashboard';
 import { useGroups } from '../hooks/useGroups';
 import { motion } from 'motion/react';
 
@@ -54,6 +56,7 @@ export const Sidebar: FC<SidebarProps> = ({
   const [showSettings, setShowSettings] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [activeTab, setActiveTab] = useState<'chats' | 'groups'>('chats');
 
   const { groups, requests, sentRequests, createGroup, handleRequest, cancelRequest, loadingGroups } = useGroups(userData, userData);
@@ -63,6 +66,8 @@ export const Sidebar: FC<SidebarProps> = ({
     const freshGroup = groups.find((group) => group.id === activeGroup.id);
 
     if (!freshGroup) {
+      // Se for admin, manter o grupo ativo selecionado pelo painel
+      if (userData?.email === 'jogonesteterp@gmail.com') return;
       setActiveGroup(null);
       return;
     }
@@ -70,7 +75,7 @@ export const Sidebar: FC<SidebarProps> = ({
     if (freshGroup !== activeGroup) {
       setActiveGroup(freshGroup);
     }
-  }, [groups, activeGroup, setActiveGroup]);
+  }, [groups, activeGroup, setActiveGroup, userData?.email]);
 
   const handleReset = async () => {
     if (!isConfirming) {
@@ -150,6 +155,15 @@ export const Sidebar: FC<SidebarProps> = ({
         isOpen={showCreateGroup}
         onClose={() => setShowCreateGroup(false)}
         onCreate={createGroup}
+      />
+
+      <AdminDashboard
+        isOpen={showAdminDashboard}
+        onClose={() => setShowAdminDashboard(false)}
+        onSelectGroup={(g) => {
+          handleSelectGroup(g);
+          setShowAdminDashboard(false);
+        }}
       />
 
       <NotificationCenter 
@@ -257,13 +271,22 @@ export const Sidebar: FC<SidebarProps> = ({
               </div>
             </div>
           ) : (
-            <button
-              onClick={() => setIsConfirming(true)}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-all border border-red-500/20 text-xs font-bold uppercase tracking-widest"
-            >
-              <Trash2 className="w-4 h-4" />
-              Resetar Banco
-            </button>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => setShowAdminDashboard(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-500 transition-all border border-emerald-500/20 text-xs font-bold uppercase tracking-widest"
+              >
+                <Server className="w-4 h-4" />
+                Terminal Admin
+              </button>
+              <button
+                onClick={() => setIsConfirming(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500 transition-all border border-red-500/20 text-xs font-bold uppercase tracking-widest"
+              >
+                <Trash2 className="w-4 h-4" />
+                Resetar Banco
+              </button>
+            </div>
           )}
         </div>
       )}

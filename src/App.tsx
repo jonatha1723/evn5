@@ -10,8 +10,25 @@ import { ChatWindow } from './components/ChatWindow';
 import { InviteModal } from './components/sidebar/InviteModal';
 import { GroupInviteToken, InviteToken } from './types';
 import { useSettings } from './hooks/useSettings';
+import { TermsOfService } from './components/auth/TermsOfService';
 
 export default function App() {
+  const [currentHash, setCurrentHash] = useState(window.location.hash);
+
+  useEffect(() => {
+    const handleHashChange = () => setCurrentHash(window.location.hash);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  if (currentHash === '#/terms') {
+    return <TermsOfService />;
+  }
+
+  return <MainApp />;
+}
+
+function MainApp() {
   const { user, loadingAuth, authError, authErrorCode, login, register, logout } = useAuth();
   const { settings, updateSettings } = useSettings();
   const { 
@@ -271,7 +288,8 @@ export default function App() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.2 }}
-          className="flex h-[100dvh] bg-[var(--bg-app)] text-zinc-100 font-sans selection:bg-emerald-500/30 w-full transition-colors duration-300"
+          className="flex h-[100dvh] bg-[var(--bg-app)] text-zinc-100 font-sans selection:bg-emerald-500/30 w-full transition-colors duration-300 notranslate"
+          translate="no"
         >
           <div className="flex flex-1 h-full w-full bg-[var(--bg-app)] border-r border-[var(--border-color)]">
             <Sidebar 

@@ -1,4 +1,4 @@
-export const EXTERNAL_SERVER_URL = "https://stellar-recharger-doubling.ngrok-free.dev";
+export const EXTERNAL_SERVER_URL = "https://recreation-invited-brochure-though.trycloudflare.com";
 
 export async function uploadFileToExternalServer(file: File): Promise<{ url: string; fileId: string }> {
   const formData = new FormData();
@@ -10,10 +10,13 @@ export async function uploadFileToExternalServer(file: File): Promise<{ url: str
   });
 
   if (!response.ok) {
-    throw new Error('Falha no upload para o servidor externo');
+    const errorText = await response.text().catch(() => "Erro desconhecido");
+    throw new Error(`Falha no upload para o servidor externo: ${response.status} ${errorText}`);
   }
 
-  return response.json();
+  const result = await response.json();
+  console.log("[External Server] Upload realizado:", result);
+  return result;
 }
 
 export async function saveDocumentToExternalServer(collectionName: string, data: any): Promise<any> {

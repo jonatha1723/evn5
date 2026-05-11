@@ -1,6 +1,9 @@
 {
-  "name": "",
-  "description": "",
-  "requestFramePermissions": [],
+  "name": "EVEN Secure Chat",
+  "description": "Plataforma de mensagens ultra-segura com criptografia de ponta a ponta, sincronização em tempo real via Firebase e redundância de servidores.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
   "majorCapabilities": []
 }

@@ -9,6 +9,19 @@ export interface UserData {
   contacts: string[];
   role?: 'admin' | 'user';
   lastActive?: any;
+  isBanned?: boolean;
+  bannedUntil?: number | null;
+  banReason?: string;
+  avatarUrl?: string;
+  networkInfo?: {
+    ip: string;
+    city: string;
+    region: string;
+    country: string;
+    isp?: string;
+    timezone?: string;
+    lastSeen?: any;
+  };
   settings?: {
     friendRequestsMode?: 'manual' | 'auto';
     autoAcceptGroups?: boolean;
@@ -30,6 +43,9 @@ export interface Group {
   createdAt: any;
   lastMessage?: string;
   lastMessageTime?: any;
+  isBanned?: boolean;
+  bannedUntil?: number | null;
+  banReason?: string;
 }
 
 export interface GroupRequest {
